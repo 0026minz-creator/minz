@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>일본 이색 여행 쇼츠 생성기 (Jules Edition)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        neon: '#00f3ff',
+                        darkbg: '#0f172a',
+                        cardbg: '#1e293b'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- JSZip -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- FileSaver -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <!-- Marked (for Markdown rendering if needed) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <style>
+        body { font-family: 'Pretendard', sans-serif; }
+        .neon-text { text-shadow: 0 0 10px #00f3ff; }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #00f3ff;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-darkbg text-white min-h-screen p-4 md:p-8">
+
+    <div class="max-w-4xl mx-auto space-y-8">
+
+        <!-- Header -->
+        <header class="text-center space-y-2">
+            <h1 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600 neon-text">
+                🇯🇵 일본 이색 여행 쇼츠 생성기
+            </h1>
+            <p class="text-gray-400">한국인은 모르는 숨겨진 명소를 찾아 60초 쇼츠로 완성하세요.</p>
+        </header>
+
+        <!-- API Key Settings -->
+        <section class="bg-cardbg p-6 rounded-xl border border-gray-700 shadow-lg">
+            <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+                🔑 API 키 설정 <span class="text-xs text-gray-500 font-normal">(브라우저에만 저장됩니다)</span>
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Google Gemini API Key (필수)</label>
+                    <input type="password" id="geminiKey" placeholder="AI Studio Key 입력" class="w-full bg-gray-800 border border-gray-600 rounded p-2 focus:border-neon outline-none transition">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">OpenAI API Key (이미지/음성용)</label>
+                    <input type="password" id="openaiKey" placeholder="sk-... 입력 (없으면 기능 제한)" class="w-full bg-gray-800 border border-gray-600 rounded p-2 focus:border-neon outline-none transition">
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 1: Topic Discovery -->
+        <section id="step1" class="bg-cardbg p-6 rounded-xl border border-gray-700 shadow-lg">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold text-cyan-300">[1단계] 이색 주제 발굴</h2>
+                <button onclick="generateTopics()" class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg font-bold transition flex items-center gap-2">
+                    <span id="btnText1">주제 제안받기</span>
+                    <div id="loader1" class="loader hidden w-4 h-4 border-2"></div>
+                </button>
+            </div>
+            <div id="topicsArea" class="grid grid-cols-1 md:grid-cols-3 gap-4 hidden">
+                <!-- Topics will be injected here -->
+            </div>
+        </section>
+
+        <!-- Step 2: Script Generation -->
+        <section id="step2" class="bg-cardbg p-6 rounded-xl border border-gray-700 shadow-lg opacity-50 pointer-events-none transition">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold text-cyan-300">[2단계] 60초 타임라인 설계</h2>
+                <div id="selectedTopicDisplay" class="text-sm text-gray-300 italic hidden"></div>
+            </div>
+            <div id="scriptArea" class="space-y-4 hidden">
+                <!-- Script clips will be injected here -->
+            </div>
+            <button id="confirmScriptBtn" onclick="confirmScript()" class="w-full mt-4 bg-green-600 hover:bg-green-500 px-4 py-3 rounded-lg font-bold hidden">
+                이 대본으로 에셋 생성하기 (3단계)
+            </button>
+        </section>
+
+        <!-- Step 3: Asset Generation -->
+        <section id="step3" class="bg-cardbg p-6 rounded-xl border border-gray-700 shadow-lg opacity-50 pointer-events-none transition">
+            <h2 class="text-xl font-semibold text-cyan-300 mb-4">[3단계] 에셋 자동 생성 (이미지 + 음성)</h2>
+
+            <div class="space-y-4">
+                <div class="flex justify-between text-sm text-gray-400">
+                    <span>진행률</span>
+                    <span id="progressText">0/14 (0%)</span>
+                </div>
+                <div class="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
+                    <div id="progressBar" class="bg-neon h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <div id="logArea" class="h-40 overflow-y-auto bg-gray-900 p-4 rounded text-xs font-mono text-green-400 space-y-1">
+                    <p class="text-gray-500">대기 중...</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 4: Download -->
+        <section id="step4" class="bg-cardbg p-6 rounded-xl border border-gray-700 shadow-lg opacity-50 pointer-events-none transition text-center">
+            <h2 class="text-xl font-semibold text-cyan-300 mb-4">[4단계] 완료 및 다운로드</h2>
+            <button onclick="downloadZip()" class="bg-purple-600 hover:bg-purple-500 px-8 py-4 rounded-xl font-bold text-xl shadow-lg shadow-purple-900/50 transition transform hover:scale-105">
+                📦 unknown_japan_top5.zip 다운로드
+            </button>
+        </section>
+
+    </div>
+
+    <!-- Logic Script -->
+    <script type="module">
+        import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
+
+        // State
+        let selectedTopic = null;
+        let scriptData = []; // Array of objects { id, type, content, visual_prompt, narration }
+        let generatedAssets = { images: {}, audio: {} }; // Store Blobs
+
+        // DOM Elements
+        const logArea = document.getElementById('logArea');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+
+        // Helper: Log
+        function log(msg) {
+            const p = document.createElement('p');
+            p.innerText = `> ${msg}`;
+            logArea.appendChild(p);
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        // --- Step 1: Generate Topics ---
+        window.generateTopics = async function() {
+            const key = document.getElementById('geminiKey').value;
+            if (!key) return alert("Gemini API Key를 입력해주세요!");
+
+            const btn = document.getElementById('btnText1');
+            const loader = document.getElementById('loader1');
+
+            btn.innerText = "분석 중...";
+            loader.classList.remove('hidden');
+
+            try {
+                const genAI = new GoogleGenerativeAI(key);
+                const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+                const prompt = `
+                당신은 일본 여행 전문가입니다.
+                한국인에게 알려지지 않은 일본의 생소하고 신비로운 명소(특히 시골, 비경, 독특한 문화) 3가지를 발굴해 제안하세요.
+
+                조건:
+                1. 한국 포털(네이버 등)에 정보가 거의 없는 곳 위주.
+                2. '한국인에겐 생소하지만 조회수가 터질만한' 반전 매력이 있는 곳.
+                3. 각 주제별로 50자 내외의 매력적인 설명 포함.
+
+                응답 형식(JSON Array):
+                [
+                    {"title": "주제명1", "desc": "설명..."},
+                    {"title": "주제명2", "desc": "설명..."},
+                    {"title": "주제명3", "desc": "설명..."}
+                ]
+                JSON만 출력하세요. 마크다운 제외.
+                `;
+
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                let text = response.text();
+
+                // Clean markdown if present
+                text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+                const topics = JSON.parse(text);
+
+                renderTopics(topics);
+
+            } catch (e) {
+                console.error(e);
+                alert("오류 발생: " + e.message);
+            } finally {
+                btn.innerText = "다시 제안받기";
+                loader.classList.add('hidden');
+            }
+        };
+
+        function renderTopics(topics) {
+            const area = document.getElementById('topicsArea');
+            area.innerHTML = '';
+            area.classList.remove('hidden');
+
+            topics.forEach((t, idx) => {
+                const div = document.createElement('div');
+                div.className = "bg-gray-800 p-4 rounded border border-gray-600 hover:border-neon cursor-pointer transition hover:bg-gray-750";
+                div.onclick = () => selectTopic(t);
+                div.innerHTML = `
+                    <div class="text-2xl mb-2">🇯🇵</div>
+                    <h3 class="font-bold text-lg text-white mb-1">${t.title}</h3>
+                    <p class="text-sm text-gray-400">${t.desc}</p>
+                `;
+                area.appendChild(div);
+            });
+        }
+
+        function selectTopic(topic) {
+            selectedTopic = topic;
+            // Activate Step 2
+            const s2 = document.getElementById('step2');
+            s2.classList.remove('opacity-50', 'pointer-events-none');
+
+            document.getElementById('selectedTopicDisplay').innerText = `선택됨: ${topic.title}`;
+            document.getElementById('selectedTopicDisplay').classList.remove('hidden');
+
+            generateScript(topic);
+        }
+
+        // --- Step 2: Generate Script ---
+        async function generateScript(topic) {
+            const key = document.getElementById('geminiKey').value;
+            const area = document.getElementById('scriptArea');
+            area.innerHTML = '<div class="text-center text-neon animate-pulse">AI가 랭킹과 대본을 설계 중입니다...</div>';
+            area.classList.remove('hidden');
+
+            try {
+                const genAI = new GoogleGenerativeAI(key);
+                const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+                const prompt = `
+                주제: ${topic.title}
+                설명: ${topic.desc}
+
+                위 주제로 60초 쇼츠 영상을 위한 7개의 클립을 구성하세요.
+
+                구조:
+                - 클립 01: [인트로] "한국인은 절대 모르는 일본의 XX?" (5초)
+                - 클립 02~05: [랭킹 5위~2위] 장소별 이색 포인트 상세 설명 (각 10초) - 생소함과 반전도가 높은 순서로 배치.
+                - 클립 06: [랭킹 1위] 가장 충격적인 하이라이트 (10초)
+                - 클립 07: [아웃트로] "나만 알고 싶은 곳이라면 저장! 위치는 댓글 확인" (5초)
+
+                각 클립은 다음 정보를 포함해야 합니다:
+                1. narration: 한국어 내레이션 (구어체, 비밀을 알려주는 호기심 가득한 톤)
+                2. visual_prompt: DALL-E 3 이미지 생성용 영문 프롬프트 (시네마틱, 고화질, 장소의 분위기 극대화)
+
+                응답 형식(JSON Array only):
+                [
+                    { "id": "01_Intro", "narration": "...", "visual_prompt": "..." },
+                    { "id": "02_Rank5", "narration": "...", "visual_prompt": "..." },
+                    ...
+                    { "id": "07_Outro", "narration": "...", "visual_prompt": "..." }
+                ]
+                JSON만 출력하세요.
+                `;
+
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                let text = response.text();
+                text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+
+                scriptData = JSON.parse(text);
+                renderScript(scriptData);
+                document.getElementById('confirmScriptBtn').classList.remove('hidden');
+
+            } catch (e) {
+                area.innerHTML = `<div class="text-red-500">오류 발생: ${e.message}</div>`;
+            }
+        }
+
+        function renderScript(data) {
+            const area = document.getElementById('scriptArea');
+            area.innerHTML = '';
+
+            data.forEach(clip => {
+                const div = document.createElement('div');
+                div.className = "bg-gray-800 p-3 rounded flex flex-col gap-2";
+                div.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-mono text-neon bg-gray-900 px-2 py-1 rounded">${clip.id}</span>
+                        <span class="text-xs text-gray-500">Visual Prompt Ready</span>
+                    </div>
+                    <p class="text-white text-sm">🗣️ "${clip.narration}"</p>
+                    <p class="text-gray-500 text-xs truncate">🖼️ ${clip.visual_prompt}</p>
+                `;
+                area.appendChild(div);
+            });
+        }
+
+        window.confirmScript = function() {
+            const s3 = document.getElementById('step3');
+            s3.classList.remove('opacity-50', 'pointer-events-none');
+            generateAssets();
+        }
+
+        // --- Step 3: Generate Assets ---
+        async function generateAssets() {
+            const openaiKey = document.getElementById('openaiKey').value;
+
+            // Check if key is provided
+            if (!openaiKey) {
+                if(!confirm("OpenAI 키가 입력되지 않았습니다. \n이미지와 음성이 '더미 데이터(placeholder)'로 대체됩니다. 진행할까요?")) return;
+            }
+
+            log("에셋 생성 시작...");
+            const totalTasks = scriptData.length * 2; // Image + Audio per clip
+            let completedTasks = 0;
+
+            const updateProgress = () => {
+                completedTasks++;
+                const pct = Math.round((completedTasks / totalTasks) * 100);
+                progressBar.style.width = `${pct}%`;
+                progressText.innerText = `${completedTasks}/${totalTasks} (${pct}%)`;
+                if (completedTasks >= totalTasks) {
+                    log("모든 에셋 생성 완료!");
+                    document.getElementById('step4').classList.remove('opacity-50', 'pointer-events-none');
+                }
+            };
+
+            // Process sequentially or parallel? Parallel is faster but hits rate limits.
+            // We'll do simple sequential per type to be safe, or batch.
+            // Let's do a loop.
+
+            for (const clip of scriptData) {
+                // 1. Audio
+                log(`[${clip.id}] 음성 생성 중...`);
+                try {
+                    const audioBlob = await generateAudio(clip.narration, openaiKey);
+                    generatedAssets.audio[clip.id] = audioBlob;
+                    log(`[${clip.id}] 음성 완료.`);
+                } catch (e) {
+                    log(`[${clip.id}] 음성 실패: ${e.message}`);
+                    generatedAssets.audio[clip.id] = null; // Handle missing
+                }
+                updateProgress();
+
+                // 2. Image
+                log(`[${clip.id}] 이미지 생성 중...`);
+                try {
+                    const imgBlob = await generateImage(clip.visual_prompt, openaiKey);
+                    generatedAssets.images[clip.id] = imgBlob;
+                    log(`[${clip.id}] 이미지 완료.`);
+                } catch (e) {
+                    log(`[${clip.id}] 이미지 실패: ${e.message}`);
+                    generatedAssets.images[clip.id] = null;
+                }
+                updateProgress();
+            }
+        }
+
+        async function generateAudio(text, apiKey) {
+            if (!apiKey) return new Blob(["Placeholder Audio"], { type: 'text/plain' });
+
+            const response = await fetch("https://api.openai.com/v1/audio/speech", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${apiKey}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    model: "tts-1",
+                    input: text,
+                    voice: "nova" // Curious tone
+                })
+            });
+
+            if (!response.ok) throw new Error("TTS API Error");
+            return await response.blob();
+        }
+
+        async function generateImage(prompt, apiKey) {
+            if (!apiKey) {
+                // Return a placeholder image from Lorem Picsum (reliable fallback)
+                // Use a random ID to prevent caching of the same image
+                const randomId = Math.floor(Math.random() * 1000);
+                const res = await fetch(`https://picsum.photos/seed/${randomId}/1080/1920`);
+                if(res.ok) return await res.blob();
+                return new Blob(["Placeholder Image"], { type: 'text/plain' });
+            }
+
+            const response = await fetch("https://api.openai.com/v1/images/generations", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${apiKey}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    model: "dall-e-3",
+                    prompt: prompt + " --ar 9:16",
+                    n: 1,
+                    size: "1024x1792", // DALL-E 3 standard portrait
+                    quality: "standard"
+                })
+            });
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error?.message || "Image API Error");
+            }
+
+            const data = await response.json();
+            const url = data.data[0].url;
+
+            // Fetch the image to blob to avoid CORS issues later during zip?
+            // DALL-E urls are usually accessible.
+            // We need to proxy fetch it to store in zip.
+            const imgRes = await fetch(url); // This might fail due to CORS if OpenAI didn't set headers? OpenAI usually sets valid headers.
+            return await imgRes.blob();
+        }
+
+        // --- Step 4: Zip & Download ---
+        window.downloadZip = async function() {
+            const zip = new JSZip();
+            const folder = zip.folder("unknown_japan_top5");
+
+            // Add Script
+            const scriptText = scriptData.map(c => `[${c.id}]\nNarration: ${c.narration}\nPrompt: ${c.visual_prompt}\n`).join("\n---\n");
+            folder.file("script.txt", scriptText);
+
+            // Add Audio
+            for (const [id, blob] of Object.entries(generatedAssets.audio)) {
+                if (blob) folder.file(`${id}.mp3`, blob);
+            }
+
+            // Add Images
+            for (const [id, blob] of Object.entries(generatedAssets.images)) {
+                if (blob) folder.file(`${id}.png`, blob);
+            }
+
+            const content = await zip.generateAsync({ type: "blob" });
+            saveAs(content, "unknown_japan_top5.zip");
+        }
+
+    </script>
+</body>
+</html>
