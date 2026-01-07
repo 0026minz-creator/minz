@@ -1,0 +1,778 @@
+<!-- AI Video Content Maker - Version 2.1 (Fix: Restored Missing Functions & History Logic) -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 영상 콘텐츠 제작기 (Ver 2.1)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- JSZip 라이브러리 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .loader {
+            border: 4px solid #f3f3f3; border-top: 4px solid #3b82f6;
+            border-radius: 50%; width: 24px; height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .history-item { transition: all 0.2s ease; }
+        .history-item:hover { transform: translateX(4px); }
+        .history-item.active { border-color: #3b82f6; background-color: #eff6ff; }
+        .animate-fade-in-up { animation: fadeInUp 0.5s ease-out; }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen overflow-hidden flex font-sans text-gray-800">
+
+    <!-- 좌측 패널 -->
+    <aside class="w-[30%] bg-white border-r border-gray-200 flex flex-col h-full shadow-lg z-10">
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex items-center justify-between mb-1">
+                <h1 class="text-2xl font-bold text-blue-600 flex items-center gap-2">
+                    <i class="fa-solid fa-video"></i> AI 스튜디오
+                </h1>
+                <select id="versionSelect" class="bg-blue-50 text-blue-700 text-xs font-bold px-2 py-1 rounded border border-blue-200 focus:outline-none cursor-pointer hover:bg-blue-100 transition">
+                    <option value="v2">v2.1 (Pro)</option>
+                    <option value="v1">v1.0 (Basic)</option>
+                </select>
+            </div>
+            <p class="text-sm text-gray-500 mb-4">대본, 이미지, 음성을 한 번에</p>
+
+            <!-- API Key Input -->
+            <div class="mb-1">
+                <div class="relative">
+                    <input type="password" id="apiKeyInput" placeholder="Google API Key 입력" class="w-full p-2 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 outline-none transition" onchange="updateApiKey(this.value)">
+                    <i class="fa-solid fa-key absolute right-3 top-2.5 text-gray-400 text-xs"></i>
+                </div>
+                <p class="text-[10px] text-gray-400 mt-1 pl-1">API Key는 브라우저에만 저장됩니다.</p>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            <!-- 1. 콘텐츠 설정 -->
+            <section class="space-y-4">
+                <h2 class="text-lg font-semibold border-l-4 border-blue-500 pl-2">1. 콘텐츠 설정</h2>
+                <div class="relative">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">주제 입력</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="topicInput" placeholder="예: 2024년 AI 트렌드" class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition">
+                        <button onclick="recommendTopics()" class="bg-yellow-400 hover:bg-yellow-500 text-white px-3 rounded-lg shadow-sm transition flex items-center justify-center" title="✨ AI 아이디어 추천">
+                            <i class="fa-solid fa-lightbulb text-lg"></i>
+                        </button>
+                    </div>
+                    <div id="ideaPopup" class="hidden absolute top-full left-0 right-0 mt-2 bg-white border border-yellow-200 rounded-xl shadow-xl z-50 p-3">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs font-bold text-yellow-600">✨ Gemini 추천 주제</span>
+                            <button onclick="closeIdeaPopup()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div id="ideaList" class="space-y-2"><div class="loader w-4 h-4 border-yellow-500 mx-auto"></div></div>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">분량 선택</label>
+                    <select id="durationSelect" class="w-full p-3 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="15초">15초 (초숏폼)</option>
+                        <option value="30초">30초 (숏폼)</option>
+                        <option value="1분">1분 (일반)</option>
+                        <option value="2분">2분 (심층)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">화면 비율</label>
+                    <div class="flex gap-2">
+                        <label class="flex-1 cursor-pointer border rounded-lg p-2 text-center hover:bg-blue-50 has-[:checked]:bg-blue-100 has-[:checked]:border-blue-500 transition">
+                            <input type="radio" name="aspectRatio" value="16:9" class="hidden" checked>
+                            <span class="text-sm block"><i class="fa-solid fa-desktop mb-1"></i></span>
+                            <span class="text-xs font-bold">16:9 (가로)</span>
+                        </label>
+                        <label class="flex-1 cursor-pointer border rounded-lg p-2 text-center hover:bg-blue-50 has-[:checked]:bg-blue-100 has-[:checked]:border-blue-500 transition">
+                            <input type="radio" name="aspectRatio" value="9:16" class="hidden">
+                            <span class="text-sm block"><i class="fa-solid fa-mobile-screen mb-1"></i></span>
+                            <span class="text-xs font-bold">9:16 (세로)</span>
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">스타일 선택</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="cursor-pointer border rounded-lg p-2 text-center hover:bg-blue-50 has-[:checked]:bg-blue-100 has-[:checked]:border-blue-500 transition"><input type="radio" name="style" value="재미있는" class="hidden" checked><span class="text-sm">😄 재미있는</span></label>
+                        <label class="cursor-pointer border rounded-lg p-2 text-center hover:bg-blue-50 has-[:checked]:bg-blue-100 has-[:checked]:border-blue-500 transition"><input type="radio" name="style" value="교육적인" class="hidden"><span class="text-sm">📚 교육적인</span></label>
+                        <label class="cursor-pointer border rounded-lg p-2 text-center hover:bg-blue-50 has-[:checked]:bg-blue-100 has-[:checked]:border-blue-500 transition"><input type="radio" name="style" value="트렌디한" class="hidden"><span class="text-sm">😎 트렌디한</span></label>
+                        <label class="cursor-pointer border rounded-lg p-2 text-center hover:bg-blue-50 has-[:checked]:bg-blue-100 has-[:checked]:border-blue-500 transition"><input type="radio" name="style" value="감성적인" class="hidden"><span class="text-sm">🍂 감성적인</span></label>
+                        <label class="cursor-pointer border rounded-lg p-2 text-center hover:bg-blue-50 has-[:checked]:bg-blue-100 has-[:checked]:border-blue-500 transition"><input type="radio" name="style" value="뉴스" class="hidden"><span class="text-sm">📰 뉴스</span></label>
+                        <label class="cursor-pointer border rounded-lg p-2 text-center hover:bg-blue-50 has-[:checked]:bg-blue-100 has-[:checked]:border-blue-500 transition"><input type="radio" name="style" value="틱톡/쇼츠" class="hidden"><span class="text-sm">🎵 틱톡/쇼츠</span></label>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">언어 선택</label>
+                    <select id="langSelect" class="w-full p-3 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="Korean">한국어 🇰🇷</option>
+                        <option value="English">영어 🇺🇸</option>
+                        <option value="Japanese">일본어 🇯🇵</option>
+                        <option value="Chinese">중국어 🇨🇳</option>
+                    </select>
+                </div>
+            </section>
+            <hr class="border-gray-200">
+
+            <!-- 1.5 음성 설정 -->
+            <section class="space-y-4">
+                <h2 class="text-lg font-semibold border-l-4 border-green-500 pl-2">2. 음성(보이스) 설정</h2>
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition"><label class="flex items-center cursor-pointer flex-1 gap-2"><input type="radio" name="voice" value="Kore" class="w-4 h-4 text-blue-600 focus:ring-blue-500" checked><span class="text-sm">👩 여성 1 (차분함)</span></label><button onclick="previewVoice('Kore', this)" class="text-gray-400 hover:text-blue-600 p-1"><i class="fa-solid fa-play-circle text-xl"></i></button></div>
+                    <div class="flex items-center justify-between p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition"><label class="flex items-center cursor-pointer flex-1 gap-2"><input type="radio" name="voice" value="Aoede" class="w-4 h-4 text-blue-600 focus:ring-blue-500"><span class="text-sm">👧 여성 2 (밝음)</span></label><button onclick="previewVoice('Aoede', this)" class="text-gray-400 hover:text-blue-600 p-1"><i class="fa-solid fa-play-circle text-xl"></i></button></div>
+                    <div class="flex items-center justify-between p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition"><label class="flex items-center cursor-pointer flex-1 gap-2"><input type="radio" name="voice" value="Fenrir" class="w-4 h-4 text-blue-600 focus:ring-blue-500"><span class="text-sm">👨 남성 1 (중저음)</span></label><button onclick="previewVoice('Fenrir', this)" class="text-gray-400 hover:text-blue-600 p-1"><i class="fa-solid fa-play-circle text-xl"></i></button></div>
+                    <div class="flex items-center justify-between p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition"><label class="flex items-center cursor-pointer flex-1 gap-2"><input type="radio" name="voice" value="Orus" class="w-4 h-4 text-blue-600 focus:ring-blue-500"><span class="text-sm">👦 남성 2 (부드러움)</span></label><button onclick="previewVoice('Orus', this)" class="text-gray-400 hover:text-blue-600 p-1"><i class="fa-solid fa-play-circle text-xl"></i></button></div>
+                </div>
+            </section>
+            <hr class="border-gray-200">
+
+            <!-- 2. 캐릭터 설정 -->
+            <section class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-lg font-semibold border-l-4 border-purple-500 pl-2">3. 캐릭터 고정</h2>
+                    <span class="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">일관성 유지</span>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">캐릭터 이미지 업로드</label>
+                    <div class="flex items-center justify-center w-full relative">
+                        <label for="dropzone-file" class="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition overflow-hidden relative">
+                            <div id="upload-placeholder" class="flex flex-col items-center justify-center pt-2 pb-3"><i class="fa-solid fa-user-astronaut text-3xl text-gray-400 mb-2"></i><p class="text-xs text-gray-500 text-center">캐릭터 이미지를 드래그하거나<br>클릭하여 업로드</p></div>
+                            <img id="char-preview" class="hidden absolute inset-0 w-full h-full object-cover opacity-80" />
+                            <div id="char-analyzing" class="hidden absolute inset-0 bg-black bg-opacity-50 flex flex-col items-center justify-center text-white text-xs z-10"><div class="loader mb-2 w-5 h-5 border-white border-t-transparent"></div>분석 중...</div>
+                            <input id="dropzone-file" type="file" class="hidden" accept="image/*" />
+                        </label>
+                    </div>
+                    <div id="char-features-box" class="hidden mt-2 p-2 bg-purple-50 border border-purple-100 rounded text-xs text-purple-800"><p class="font-bold mb-1">🤖 분석된 캐릭터 특징:</p><p id="char-features-text" class="line-clamp-2 leading-relaxed opacity-80 italic">...</p></div>
+                </div>
+            </section>
+            <hr class="border-gray-200">
+
+            <!-- 4. 작업 기록 (History) -->
+            <section id="historySection" class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-lg font-semibold border-l-4 border-gray-500 pl-2">4. 작업 기록</h2>
+                    <span class="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">기록</span>
+                </div>
+                <div id="historyList" class="space-y-2 max-h-48 overflow-y-auto pr-1"><p class="text-xs text-gray-400 text-center py-4">생성된 기록이 없습니다.</p></div>
+            </section>
+            <hr class="border-gray-200">
+
+            <!-- 3. 상태 메시지 창 -->
+            <div id="statusBox" class="hidden p-3 bg-gray-800 text-white text-xs rounded-lg font-mono">대기 중...</div>
+        </div>
+
+        <!-- 4. 실행 버튼 -->
+        <div class="p-6 border-t border-gray-200 bg-gray-50">
+            <button id="generateBtn" onclick="startPlanning()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transform transition hover:scale-[1.02] flex items-center justify-center gap-2">
+                <i class="fa-solid fa-pen-nib"></i><span>1단계: 기획안(대본) 생성</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- 우측 패널 -->
+    <main class="w-[70%] h-full flex flex-col bg-gray-100">
+        <div class="bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm z-10">
+            <h2 class="text-lg font-semibold text-gray-700">작업 결과물 (12 Scenes)</h2>
+            <div class="flex items-center gap-2">
+                 <button id="downloadAllBtn" onclick="downloadAllAssets()" class="hidden text-sm bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition items-center gap-2 shadow-sm"><i class="fa-solid fa-file-zipper"></i> 전체 다운로드 (.zip)</button>
+                 <div class="h-6 w-px bg-gray-300 mx-2"></div>
+                 <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">대본</span>
+                 <span class="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">이미지</span>
+                 <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">오디오</span>
+            </div>
+        </div>
+        <div id="resultsContainer" class="flex-1 overflow-y-auto p-8 space-y-6 scroll-smooth">
+            <div id="placeholder" class="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
+                <i class="fa-regular fa-clapperboard text-6xl mb-4"></i>
+                <p class="text-lg">왼쪽에서 설정을 완료하고 '1단계: 기획안 생성'을 눌러주세요.</p>
+                <p class="text-sm">대본을 먼저 확인한 후 영상을 제작할 수 있습니다.</p>
+            </div>
+        </div>
+    </main>
+
+    <audio id="previewAudio" class="hidden"></audio>
+
+<script type="module">
+    // ----------------------------------------------------
+    // 1. 초기화 및 유틸리티
+    // ----------------------------------------------------
+    let apiKey = localStorage.getItem("gemini_api_key") || "";
+
+    // Initialize API Key Input
+    document.addEventListener("DOMContentLoaded", () => {
+        const input = document.getElementById('apiKeyInput');
+        if(input && apiKey) input.value = apiKey;
+    });
+
+    window.updateApiKey = function(val) {
+        apiKey = val.trim();
+        localStorage.setItem("gemini_api_key", apiKey);
+        if(apiKey) updateStatus("API Key가 저장되었습니다.");
+    }
+
+    // 로깅 함수 (ReferenceError 방지)
+    function updateStatus(msg) {
+        const sb = document.getElementById('statusBox');
+        if(sb) {
+            sb.classList.remove('hidden');
+            sb.innerHTML = `> ${msg}`;
+        }
+        console.log(msg);
+    }
+
+    function getPlaceholderImage(text) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640; canvas.height = 360;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#f1f5f9'; ctx.fillRect(0, 0, 640, 360);
+        ctx.fillStyle = '#94a3b8'; ctx.font = 'bold 30px sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(text, 320, 180);
+        return canvas.toDataURL('image/png');
+    }
+
+    function pcmToWav(base64PCM, sampleRate = 24000) {
+        const binaryString = atob(base64PCM);
+        const len = binaryString.length;
+        const buffer = new Uint8Array(len);
+        for (let i = 0; i < len; i++) buffer[i] = binaryString.charCodeAt(i);
+        const wavHeader = new ArrayBuffer(44);
+        const view = new DataView(wavHeader);
+        writeString(view, 0, 'RIFF'); view.setUint32(4, 36 + len, true); writeString(view, 8, 'WAVE');
+        writeString(view, 12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true); view.setUint16(34, 16, true); writeString(view, 36, 'data');
+        view.setUint32(40, len, true);
+        const blob = new Blob([view, buffer], { type: 'audio/wav' });
+        return blob;
+    }
+    function writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+    }
+
+    // ----------------------------------------------------
+    // 2. 상태 변수 및 DOM
+    // ----------------------------------------------------
+    let generatedAssets = { scripts: [], images: {}, audio: {} };
+    let marketingData = null;
+    let generationHistory = [];
+    let historyCount = 0;
+    let characterDescriptionPrompt = "";
+    let marketingContainer = null;
+    let currentVersion = 'v2';
+
+    const generateBtn = document.getElementById('generateBtn');
+    const statusBox = document.getElementById('statusBox');
+    const resultsContainer = document.getElementById('resultsContainer');
+    const placeholder = document.getElementById('placeholder');
+    const dropzoneFile = document.getElementById('dropzone-file');
+    const downloadAllBtn = document.getElementById('downloadAllBtn');
+    const historyList = document.getElementById('historyList');
+    const versionSelect = document.getElementById('versionSelect');
+    const historySection = document.getElementById('historySection');
+    const topicInput = document.getElementById('topicInput');
+    const charPreview = document.getElementById('char-preview');
+    const uploadPlaceholder = document.getElementById('upload-placeholder');
+    const charAnalyzing = document.getElementById('char-analyzing');
+    const charFeaturesBox = document.getElementById('char-features-box');
+    const charFeaturesText = document.getElementById('char-features-text');
+    const previewAudioPlayer = document.getElementById('previewAudio');
+
+    // 이벤트 리스너
+    versionSelect.addEventListener('change', (e) => {
+        currentVersion = e.target.value;
+        toggleVersionFeatures();
+    });
+
+    function toggleVersionFeatures() {
+        if (currentVersion === 'v1') {
+            historySection.classList.add('hidden');
+            if (marketingContainer) marketingContainer.parentElement.classList.add('hidden');
+        } else {
+            historySection.classList.remove('hidden');
+            if (marketingContainer) marketingContainer.parentElement.classList.remove('hidden');
+        }
+    }
+
+    // 캐릭터 분석 (Vision API)
+    dropzoneFile.addEventListener('change', async (e) => {
+        if (!apiKey) { alert("API Key를 입력해주세요!"); document.getElementById('apiKeyInput').focus(); return; }
+        if(e.target.files?.[0]) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const base64 = e.target.result;
+                charPreview.src = base64;
+                charPreview.classList.remove('hidden');
+                uploadPlaceholder.classList.add('hidden');
+
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey.trim()}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: "Describe character appearance briefly." }, { inlineData: { mimeType: "image/png", data: base64.split(',')[1] } }] }]
+                        })
+                    });
+                    const data = await response.json();
+                    characterDescriptionPrompt = data.candidates[0].content.parts[0].text;
+                    charFeaturesText.innerText = characterDescriptionPrompt;
+                    charFeaturesBox.classList.remove('hidden');
+                } catch(err) { console.error(err); }
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+    // ----------------------------------------------------
+    // 3. 주요 기능 함수 (기획 -> 제작)
+    // ----------------------------------------------------
+
+    // 미리듣기 기능
+    window.previewVoice = async function(voiceName, btn) {
+        if (!apiKey) { alert("API Key를 입력해주세요!"); document.getElementById('apiKeyInput').focus(); return; }
+
+        const originalIcon = btn.innerHTML;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+
+        try {
+            const text = "안녕하세요, 제 목소리 어떠신가요?";
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: text }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } } })
+            });
+            if (!response.ok) throw new Error("API Error");
+            const data = await response.json();
+            const inlineData = data.candidates[0].content.parts[0].inlineData;
+            const wavBlob = pcmToWav(inlineData.data);
+
+            const audio = document.getElementById('previewAudio');
+            audio.src = URL.createObjectURL(wavBlob);
+            audio.play();
+            updateStatus(`${voiceName} 목소리 미리듣기 중...`);
+        } catch (e) {
+            console.error(e);
+            alert("미리듣기 실패: " + e.message);
+        } finally {
+            btn.innerHTML = originalIcon;
+        }
+    };
+
+    // 전역 함수로 노출
+    window.startPlanning = async function() {
+        if (!apiKey) { alert("API Key를 입력해주세요!"); document.getElementById('apiKeyInput').focus(); return; }
+
+        const topic = document.getElementById('topicInput').value;
+        if (!topic) { alert("주제를 입력해주세요!"); return; }
+
+        const duration = document.getElementById('durationSelect').value;
+        const style = document.querySelector('input[name="style"]:checked').value;
+        const lang = document.getElementById('langSelect').value;
+        const aspectRatio = document.querySelector('input[name="aspectRatio"]:checked').value;
+
+        generateBtn.disabled = true;
+        generateBtn.innerHTML = `<div class="loader mr-2"></div> 기획안 작성 중...`;
+        placeholder.classList.add('hidden');
+        resultsContainer.innerHTML = '';
+        downloadAllBtn.classList.add('hidden');
+        marketingContainer = null;
+        marketingData = null;
+        generatedAssets = { scripts: [], images: {}, audio: {} };
+
+        try {
+            updateStatus("1단계: AI가 대본과 이미지 프롬프트를 기획 중입니다...");
+            const scriptData = await generateScript(topic, duration, style, lang);
+            generatedAssets.scripts = scriptData;
+            renderSkeletons(scriptData, aspectRatio, true);
+            showProductionButton();
+            updateStatus("기획안이 완성되었습니다. 내용을 확인하고 제작을 시작하세요.");
+        } catch (error) {
+            console.error(error);
+            updateStatus(`오류 발생: ${error.message}`);
+            alert("기획안 생성 중 오류가 발생했습니다.");
+        } finally {
+            generateBtn.disabled = false;
+            generateBtn.innerHTML = `<i class="fa-solid fa-pen-nib"></i><span>1단계: 기획안(대본) 생성</span>`;
+        }
+    };
+
+    window.startProduction = async function() {
+        if (!apiKey) { alert("API Key를 입력해주세요!"); document.getElementById('apiKeyInput').focus(); return; }
+
+        const prodBtn = document.getElementById('productionBtn');
+        const aspectRatio = document.querySelector('input[name="aspectRatio"]:checked').value;
+        const selectedVoice = document.querySelector('input[name="voice"]:checked').value;
+        const topic = document.getElementById('topicInput').value;
+
+        if(prodBtn) {
+            prodBtn.disabled = true;
+            prodBtn.innerHTML = `<div class="loader mr-2"></div> 영상 리소스 생성 중...`;
+        }
+
+        const replanBtn = document.getElementById('replanBtn');
+        if(replanBtn) replanBtn.classList.add('hidden');
+
+        try {
+            updateStatus("2단계: 이미지와 음성을 생성 중입니다. (순차 처리)");
+
+            const scriptData = generatedAssets.scripts;
+            for (let i = 0; i < scriptData.length; i++) {
+                const scene = scriptData[i];
+                const cardId = `scene-${scene.scene_number}`;
+
+                document.getElementById(cardId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                updateStatus(`Scene ${scene.scene_number} 제작 중...`);
+
+                const imgLoader = document.getElementById(`img-loader-${scene.scene_number}`);
+                if(imgLoader) imgLoader.innerHTML = `<div class="loader mb-2"></div> 이미지 생성 중...`;
+                const audioContainer = document.getElementById(`audio-container-${scene.scene_number}`);
+                if(audioContainer) audioContainer.innerHTML = `<div class="text-xs text-gray-400 flex items-center"><div class="loader w-4 h-4 mr-2 border-2"></div> 음성 생성 중...</div>`;
+
+                const isCharVisible = scene.character_visible !== undefined ? scene.character_visible : true;
+                await generateImageForScene(scene.image_prompt, cardId, scene.scene_number, aspectRatio, isCharVisible);
+                await generateAudioForScene(scene.script_local, cardId, scene.scene_number, selectedVoice);
+                await new Promise(r => setTimeout(r, 800));
+            }
+
+            if(currentVersion === 'v2') addToHistory(topic, generatedAssets, aspectRatio);
+
+            updateStatus("모든 작업이 완료되었습니다! 다운로드 버튼을 눌러 저장하세요. 🎉");
+            downloadAllBtn.classList.remove('hidden');
+
+            document.getElementById('production-panel')?.remove();
+            if(currentVersion === 'v2') showMarketingButton();
+
+        } catch (error) {
+            console.error(error);
+            updateStatus(`오류 발생: ${error.message}`);
+            if(prodBtn) {
+                prodBtn.disabled = false;
+                prodBtn.innerHTML = `다시 시도`;
+            }
+        }
+    };
+
+    window.recommendTopics = async function() {
+        if (!apiKey) { alert("API Key를 입력해주세요!"); document.getElementById('apiKeyInput').focus(); return; }
+
+        const style = document.querySelector('input[name="style"]:checked').value;
+        const lang = document.getElementById('langSelect').value;
+        const popup = document.getElementById('ideaPopup');
+        const list = document.getElementById('ideaList');
+
+        popup.classList.remove('hidden');
+        list.innerHTML = `<div class="loader w-4 h-4 border-yellow-500 mx-auto"></div>`;
+
+        try {
+            const systemPrompt = `Suggest 3 viral video topics based on Style: '${style}' and Language: '${lang}'. Output strictly JSON array.`;
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey.trim()}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: "Suggest topics." }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    generationConfig: { responseMimeType: "application/json" }
+                })
+            });
+            const data = await response.json();
+            const topics = JSON.parse(data.candidates[0].content.parts[0].text);
+
+            list.innerHTML = '';
+            topics.forEach(topic => {
+                const item = document.createElement('div');
+                item.className = "text-xs p-2 hover:bg-yellow-50 rounded cursor-pointer transition border-b border-gray-100 last:border-0";
+                item.innerText = topic;
+                item.onclick = () => { topicInput.value = topic; popup.classList.add('hidden'); };
+                list.appendChild(item);
+            });
+        } catch (e) {
+            list.innerHTML = `<p class="text-xs text-red-400">추천 실패</p>`;
+        }
+    };
+
+    window.closeIdeaPopup = function() {
+        document.getElementById('ideaPopup').classList.add('hidden');
+    };
+
+    // --- 히스토리 기능 ---
+    function addToHistory(topic, assets, aspectRatio) {
+        if (currentVersion === 'v1') return;
+        historyCount++;
+        const now = new Date();
+        const timestamp = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+
+        const historyItem = {
+            id: historyCount, topic: topic, timestamp: timestamp,
+            assets: {
+                scripts: JSON.parse(JSON.stringify(assets.scripts)),
+                images: {...assets.images}, audio: {...assets.audio}
+            },
+            aspectRatio: aspectRatio,
+            marketingData: marketingData ? JSON.parse(JSON.stringify(marketingData)) : null
+        };
+        generationHistory.unshift(historyItem);
+        renderHistoryList();
+    }
+
+    function renderHistoryList() {
+        historyList.innerHTML = generationHistory.length === 0 ? `<p class="text-xs text-gray-400 text-center py-4">생성된 기록이 없습니다.</p>` : '';
+        generationHistory.forEach(item => {
+            const div = document.createElement('div');
+            div.className = "history-item bg-white border border-gray-200 rounded p-3 cursor-pointer hover:shadow-sm mb-2";
+            div.innerHTML = `<div class="flex justify-between items-center mb-1"><span class="text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Ver.${item.id}</span><span class="text-[10px] text-gray-400">${item.timestamp}</span></div><p class="text-sm font-medium text-gray-700 truncate">${item.topic}</p>`;
+            div.onclick = () => restoreFromHistory(item);
+            historyList.appendChild(div);
+        });
+    }
+
+    window.restoreFromHistory = function(item) {
+        if(!confirm(`'Ver.${item.id}: ${item.topic}' 버전으로 되돌리시겠습니까?`)) return;
+        updateStatus(`Ver.${item.id} 데이터를 복원 중입니다...`);
+        generatedAssets = { scripts: item.assets.scripts, images: item.assets.images, audio: item.assets.audio };
+        marketingData = item.marketingData ? JSON.parse(JSON.stringify(item.marketingData)) : null;
+
+        placeholder.classList.add('hidden');
+        resultsContainer.innerHTML = '';
+        renderSkeletons(item.assets.scripts, item.aspectRatio, false);
+
+        item.assets.scripts.forEach(scene => {
+            const sceneNum = scene.scene_number;
+            const imageData = item.assets.images[sceneNum];
+            const audioBlob = item.assets.audio[sceneNum];
+            if (imageData) {
+                const imgElement = document.getElementById(`img-result-${sceneNum}`);
+                const loaderElement = document.getElementById(`img-loader-${sceneNum}`);
+                if (imgElement) { imgElement.src = imageData; imgElement.classList.remove('hidden'); loaderElement.classList.add('hidden'); }
+            }
+            if (audioBlob) {
+                const audioContainer = document.getElementById(`audio-container-${sceneNum}`);
+                if (audioContainer) audioContainer.innerHTML = `<audio controls class="w-full h-8"><source src="${URL.createObjectURL(audioBlob)}" type="audio/wav"></audio>`;
+            }
+        });
+
+        downloadAllBtn.classList.remove('hidden');
+        if (currentVersion === 'v2') {
+            showMarketingButton();
+            if (marketingData) renderMarketingKit();
+        }
+        updateStatus(`Ver.${item.id} 복원 완료!`);
+    };
+
+    // --- 마케팅 키트 ---
+    function showMarketingButton() {
+        const existing = document.getElementById('marketing-section-wrapper');
+        if (existing) existing.remove();
+        const wrapper = document.createElement('div');
+        wrapper.id = 'marketing-section-wrapper';
+        wrapper.className = "mt-12 pt-8 border-t-2 border-dashed border-gray-300 pb-12";
+        marketingContainer = document.createElement('div');
+        marketingContainer.id = 'marketingContainer';
+        marketingContainer.className = "mt-6";
+        const btnDiv = document.createElement('div');
+        btnDiv.className = "text-center";
+        btnDiv.innerHTML = `<button onclick="generateMarketingKit()" class="bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transform transition hover:scale-105 flex items-center justify-center gap-2 mx-auto"><i class="fa-solid fa-wand-magic-sparkles"></i><span>✨ AI 마케팅 & 썸네일 기획 생성</span></button><p class="text-xs text-gray-500 mt-2">Gemini가 대본을 분석하여 제목, 해시태그, 썸네일, BGM을 제안합니다.</p>`;
+        wrapper.appendChild(btnDiv);
+        wrapper.appendChild(marketingContainer);
+        resultsContainer.appendChild(wrapper);
+        wrapper.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    window.generateMarketingKit = async function() {
+        if (!apiKey) { alert("API Key를 입력해주세요!"); document.getElementById('apiKeyInput').focus(); return; }
+
+        if(!marketingContainer) return;
+        marketingContainer.innerHTML = `<div class="flex flex-col items-center py-8"><div class="loader w-8 h-8 mb-4 border-purple-600 border-t-transparent"></div><p>마케팅 전문가 AI 분석 중...</p></div>`;
+        marketingContainer.classList.remove('hidden');
+        try {
+            const topic = document.getElementById('topicInput').value;
+            const fullScript = generatedAssets.scripts.map(s => s.script_local).join('\n');
+            const systemPrompt = `Analyze video script about "${topic}". Generate JSON with: titles(5), description, hashtags(15), viralScore(1-10), advice(Korean), bgm_suggestion(Korean), thumbnail_prompt(No Text), email_draft(Korean newsletter).`;
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey.trim()}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: `Script: ${fullScript}` }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json" } })
+            });
+            if (!response.ok) throw new Error("API Error");
+            const data = await response.json();
+            marketingData = JSON.parse(data.candidates[0].content.parts[0].text);
+            renderMarketingKit();
+        } catch (e) { marketingContainer.innerHTML = `<p class="text-red-500 text-center">실패: ${e.message}</p>`; }
+    };
+
+    function renderMarketingKit() {
+        if (!marketingData) return;
+        marketingContainer.innerHTML = `<div class="bg-gray-50 rounded-xl p-6 border border-gray-200 shadow-sm animate-fade-in-up text-left"><h3 class="font-bold text-lg mb-4">🚀 AI 마케팅 리포트 (점수: ${marketingData.viralScore}/10)</h3><div class="space-y-4"><div><strong>추천 제목:</strong><ul class="list-disc pl-5">${marketingData.titles.map(t=>`<li>${t}</li>`).join('')}</ul></div><div><strong>해시태그:</strong> ${marketingData.hashtags.join(', ')}</div><div><strong>AI 조언:</strong> ${marketingData.advice}</div><div><strong>BGM 추천:</strong> ${marketingData.bgm_suggestion}</div><div class="mt-4 pt-4 border-t border-gray-200"><h4 class="font-bold mb-2">썸네일 생성</h4><div id="thumbnailResult" class="mb-2"></div><button id="thumbGenBtn" onclick="generateThumbnail()" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 transition text-sm">썸네일 생성하기</button></div></div></div>`;
+        marketingContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    window.generateThumbnail = async function() {
+         if (!apiKey) { alert("API Key를 입력해주세요!"); document.getElementById('apiKeyInput').focus(); return; }
+
+         const thumbBtn = document.getElementById('thumbGenBtn');
+         const thumbContainer = document.getElementById('thumbnailResult');
+         if(thumbBtn) { thumbBtn.disabled = true; thumbBtn.innerHTML = "생성 중..."; }
+         try {
+             const prompt = marketingData.thumbnail_prompt + ", high quality, 8k, youtube thumbnail style, catchy, vibrant colors, no text";
+             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey.trim()}`, {
+                 method: 'POST', headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({ instances: [{ prompt: prompt }], parameters: { sampleCount: 1, aspectRatio: "16:9" } })
+             });
+             if (!response.ok) throw new Error(`API Error (${response.status})`);
+             const data = await response.json();
+             const base64Image = `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
+             thumbContainer.innerHTML = `<img src="${base64Image}" class="w-full rounded-lg shadow-md">`;
+             generatedAssets.thumbnail = base64Image;
+             if(thumbBtn) thumbBtn.innerHTML = "생성 완료";
+         } catch (e) {
+             if(thumbContainer) thumbContainer.innerHTML = `<p class="text-red-500 text-xs">실패</p>`;
+             if(thumbBtn) { thumbBtn.disabled = false; thumbBtn.innerHTML = "다시 시도"; }
+         }
+    };
+
+    // ----------------------------------------------------
+    // API & UI Helpers
+    // ----------------------------------------------------
+    function showProductionButton() {
+        const container = document.getElementById('resultsContainer');
+        const panelHTML = `<div id="production-panel" class="mt-8 p-6 bg-blue-50 border border-blue-200 rounded-xl text-center animate-fade-in-up"><h3 class="text-lg font-bold text-blue-800 mb-2">기획안이 준비되었습니다!</h3><p class="text-sm text-blue-600 mb-4">대본 내용을 확인하셨나요? 이제 실제 영상 리소스를 생성합니다.</p><div class="flex gap-4 justify-center"><button id="replanBtn" onclick="document.getElementById('topicInput').focus(); scrollTo(0,0);" class="px-6 py-3 rounded-lg border border-blue-300 text-blue-600 font-bold hover:bg-white transition"><i class="fa-solid fa-rotate-left mr-1"></i> 다시 기획하기</button><button id="productionBtn" onclick="startProduction()" class="px-8 py-3 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-md transition flex items-center"><i class="fa-solid fa-clapperboard mr-2"></i><span>🎬 이 기획으로 영상 제작 시작</span></button></div></div>`;
+        container.insertAdjacentHTML('beforeend', panelHTML);
+        document.getElementById('production-panel').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function renderSkeletons(scenes, aspectRatio, isDraft = false) {
+        const aspectClass = aspectRatio === '9:16' ? 'aspect-[9/16]' : 'aspect-video';
+        scenes.forEach(scene => {
+            const searchKeyword = scene.search_keywords?.[0] || scene.image_prompt.split(',')[0];
+            const searchUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(searchKeyword)}`;
+            const cardHTML = `
+                <div id="scene-${scene.scene_number}" class="bg-white rounded-xl shadow-md overflow-hidden flex flex-col md:flex-row min-h-[200px] border border-gray-200 transition hover:shadow-lg">
+                    <div class="bg-blue-600 text-white p-4 flex items-center justify-center font-bold text-xl md:w-16 shrink-0">#${scene.scene_number}</div>
+                    <div class="md:w-1/3 flex flex-col border-r border-gray-100 shrink-0">
+                        <div class="bg-gray-200 relative ${aspectClass} flex items-center justify-center overflow-hidden">
+                            <div id="img-loader-${scene.scene_number}" class="text-gray-400 text-sm flex flex-col items-center">${isDraft ? '제작 대기 중' : '생성 중...'}</div>
+                            <img id="img-result-${scene.scene_number}" class="hidden w-full h-full object-cover transition-transform duration-700 hover:scale-105" alt="Scene Image">
+                        </div>
+                        <div class="p-3 bg-gray-50 border-t border-gray-100 flex-1"><p class="text-xs text-gray-600 line-clamp-4 cursor-help" title="${scene.image_prompt}">${scene.image_prompt}</p></div>
+                    </div>
+                    <div class="p-6 md:w-2/3 flex flex-col justify-between">
+                        <div>
+                            <h3 class="font-bold text-gray-800 mb-2 text-lg">대본</h3>
+                            <p class="text-gray-800 font-semibold mb-2">"${scene.script_korean}"</p>
+                            <p class="text-gray-500 text-sm italic mb-4">"${scene.script_local}"</p>
+                            <div class="mt-4 pt-3 border-t border-gray-100 text-sm text-gray-700 space-y-2">
+                                <p><span class="font-bold text-blue-600">* [이미지 설명:</span> ${scene.image_desc_ko || "설명 없음"} ]</p>
+                                <p><span class="font-bold text-blue-600">* [이미지 링크:</span> <a href="${searchUrl}" target="_blank" class="text-blue-500 underline">${searchUrl}</a> ]</p>
+                            </div>
+                        </div>
+                        <div class="mt-6 pt-4 border-t border-gray-100"><div id="audio-container-${scene.scene_number}" class="w-full bg-gray-50 p-4 rounded-xl flex justify-center h-20 items-center text-xs text-gray-400">${isDraft ? '제작 대기 중' : '생성 중...'}</div></div>
+                    </div>
+                </div>`;
+            resultsContainer.insertAdjacentHTML('beforeend', cardHTML);
+        });
+    }
+
+    async function generateScript(topic, duration, style, lang) {
+        const systemPrompt = `Create 12 scenes video script. Topic: ${topic}, Style: ${style}, Lang: ${lang}.
+        Requirements:
+        1. "script_local": Script in ${lang}.
+        2. "script_korean": Script in Korean.
+        3. "image_prompt": Detailed image prompt (NO TEXT).
+        4. "image_desc_ko": Image description in Korean.
+        5. "search_keywords": 3 keywords in Japanese/English/Korean.
+        6. Character: Korean Woman.
+        7. Background Text: Native language of location.
+        Output: JSON Array.`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey.trim()}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: "Make script." }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json" } })
+        });
+        if (!response.ok) throw new Error("API Error");
+        const data = await response.json();
+        const jsonText = data.candidates[0].content.parts[0].text.replace(/```json|```/g, "").trim();
+        const parsed = JSON.parse(jsonText);
+        return Array.isArray(parsed) ? parsed : parsed.scenes;
+    }
+
+    async function generateImageForScene(originalPrompt, cardId, sceneNum, aspectRatio, isCharVisible) {
+        const imgElement = document.getElementById(`img-result-${sceneNum}`);
+        const loaderElement = document.getElementById(`img-loader-${sceneNum}`);
+        let finalPrompt = isCharVisible ? `An image of Korean Woman. ${originalPrompt}. NO TEXT.` : `Cinematic image. ${originalPrompt}. NO TEXT.`;
+
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey.trim()}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ instances: [{ prompt: finalPrompt }], parameters: { sampleCount: 1, aspectRatio: aspectRatio } })
+            });
+            if (!response.ok) throw new Error("API Error");
+            const data = await response.json();
+            const fullBase64 = `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
+            imgElement.src = fullBase64; imgElement.classList.remove('hidden'); loaderElement.classList.add('hidden');
+            generatedAssets.images[sceneNum] = fullBase64;
+        } catch (e) {
+            imgElement.src = getPlaceholderImage("이미지 생성 불가"); imgElement.classList.remove('hidden'); loaderElement.classList.add('hidden');
+            generatedAssets.images[sceneNum] = imgElement.src;
+        }
+    }
+
+    async function generateAudioForScene(scriptText, cardId, sceneNum, selectedVoice) {
+        const container = document.getElementById(`audio-container-${sceneNum}`);
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey.trim()}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: scriptText }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice } } } } })
+            });
+            if (!response.ok) throw new Error("API Error");
+            const data = await response.json();
+            const inlineData = data.candidates[0].content.parts[0].inlineData;
+            const wavBlob = pcmToWav(inlineData.data);
+            container.innerHTML = `<audio controls class="w-full h-8"><source src="${URL.createObjectURL(wavBlob)}" type="audio/wav"></audio>`;
+            generatedAssets.audio[sceneNum] = wavBlob;
+        } catch (e) { container.innerHTML = `<span class="text-red-500 text-xs">오디오 불가</span>`; }
+    }
+
+    window.downloadAllAssets = async function() {
+        const zip = new JSZip();
+        let fullScriptText = "AI 영상 콘텐츠 제작기 - 대본\n\n";
+        generatedAssets.scripts.forEach(s => fullScriptText += `Scene ${s.scene_number}:\n[KO] ${s.script_korean}\n[Local] ${s.script_local}\n\n`);
+        zip.file("script.txt", fullScriptText);
+
+        const assetsFolder = zip.folder("assets");
+        const projectData = { scenes: [] };
+
+        for (const scene of generatedAssets.scripts) {
+            const num = scene.scene_number;
+            const paddedNum = String(num).padStart(2, '0');
+            const imgName = `scene_${paddedNum}.png`;
+            const audName = `scene_${paddedNum}.wav`;
+
+            if (generatedAssets.images[num]) assetsFolder.file(imgName, generatedAssets.images[num].split(',')[1], {base64: true});
+            if (generatedAssets.audio[num]) assetsFolder.file(audName, generatedAssets.audio[num]);
+
+            projectData.scenes.push({ id: num, image: `assets/${imgName}`, audio: `assets/${audName}`, subtitle: "" });
+        }
+        zip.file("project_data.json", JSON.stringify(projectData, null, 2));
+
+        const renderPyContent = `import os\nimport sys\nimport json\nimport platform\ntry:\n    from moviepy import *\nexcept ImportError:\n    print("pip install moviepy 필요")\n    sys.exit()\ndef create_video():\n    print("렌더링 시작")\n    base_dir = os.path.dirname(os.path.abspath(__file__))\n    json_path = os.path.join(base_dir, "project_data.json")\n    output_path = os.path.join(base_dir, "final_video.mp4")\n    if not os.path.exists(json_path): return\n    with open(json_path, 'r', encoding='utf-8') as f: data = json.load(f)\n    clips = []\n    for scene in data.get('scenes', []):\n        img = os.path.join(base_dir, scene['image'])\n        aud = os.path.join(base_dir, scene['audio'])\n        if not os.path.exists(img): continue\n        dur = 3.0\n        audio = None\n        if os.path.exists(aud):\n            try:\n                audio = AudioFileClip(aud)\n                dur = audio.duration\n            except: pass\n        try:\n            vc = ImageClip(img).with_duration(dur).with_fps(24)\n            if audio: vc = vc.with_audio(audio)\n            clips.append(vc)\n        except: pass\n    if clips:\n        final = concatenate_videoclips(clips, method="compose")\n        final.write_videofile(output_path, fps=24)\nif __name__ == "__main__": create_video()`;
+        zip.file("render.py", renderPyContent);
+        zip.file("README.txt", "1. pip install moviepy\n2. python render.py 실행");
+
+        try {
+            updateStatus("압축 중...");
+            const content = await zip.generateAsync({type:"blob"});
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(content);
+            link.download = "AI_Video_Assets.zip";
+            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+            updateStatus("다운로드 완료!");
+        } catch(e) { console.error(e); }
+    };
+</script>
+</body>
+</html>
