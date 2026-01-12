@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shorts Automation System - Integrated Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "@google/generative-ai": "https://esm.run/@google/generative-ai"
+        }
+      }
+    </script>
+    <style>
+        body { font-family: 'Pretendard', sans-serif; }
+        .clip-card:hover { transform: translateY(-2px); transition: all 0.2s; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex">
+
+    <!-- Sidebar -->
+    <aside class="w-64 bg-gray-800 border-r border-gray-700 flex flex-col">
+        <div class="p-6 border-b border-gray-700">
+            <h1 class="text-xl font-bold text-blue-400"><i class="fas fa-robot mr-2"></i>Shorts AI</h1>
+            <p class="text-xs text-gray-400 mt-1">Automated Pipeline</p>
+        </div>
+        <nav class="flex-1 p-4 space-y-2">
+            <button onclick="showSection('dashboard')" class="nav-btn w-full text-left px-4 py-3 rounded hover:bg-gray-700 bg-gray-700 text-white flex items-center">
+                <i class="fas fa-chart-line w-6"></i> 대시보드
+            </button>
+            <button onclick="showSection('settings')" class="nav-btn w-full text-left px-4 py-3 rounded hover:bg-gray-700 text-gray-300 flex items-center">
+                <i class="fas fa-cog w-6"></i> 설정
+            </button>
+        </nav>
+        <div class="p-4 border-t border-gray-700">
+            <div class="text-xs text-gray-500">System Status</div>
+            <div class="flex items-center mt-1 text-green-400 text-sm">
+                <span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span> Online
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-y-auto">
+
+        <!-- Header -->
+        <header class="bg-gray-800 border-b border-gray-700 p-6 flex justify-between items-center">
+            <h2 id="page-title" class="text-2xl font-semibold">대시보드</h2>
+            <div class="flex items-center space-x-4">
+                <span id="api-status" class="px-3 py-1 rounded-full text-xs bg-red-900 text-red-200">API Key Missing</span>
+            </div>
+        </header>
+
+        <!-- Dashboard Section -->
+        <div id="dashboard-section" class="p-8 max-w-7xl mx-auto space-y-8">
+
+            <!-- Input Area -->
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-lg">
+                <h3 class="text-lg font-medium mb-4 flex items-center text-blue-300">
+                    <i class="fas fa-file-video mr-2"></i> 영상 분석 입력 (Cognitive Engine)
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-gray-400 mb-1">영상 제목</label>
+                            <input type="text" id="video-title" class="w-full bg-gray-700 border border-gray-600 rounded px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="예: 스티브 잡스 연설">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-400 mb-1">로컬 파일 경로 (Render용)</label>
+                            <input type="text" id="video-path" class="w-full bg-gray-700 border border-gray-600 rounded px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="예: /content/video.mp4" value="video.mp4">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">영상 스크립트 (Transcript)</label>
+                        <textarea id="transcript-input" class="w-full h-32 bg-gray-700 border border-gray-600 rounded px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none resize-none" placeholder="여기에 영상의 전체 스크립트를 붙여넣으세요..."></textarea>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button onclick="analyzeVideo()" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-medium transition flex items-center">
+                        <i class="fas fa-magic mr-2"></i> AI 분석 시작
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results Area -->
+            <div id="results-area" class="hidden">
+                <div class="flex justify-between items-end mb-4">
+                    <h3 class="text-lg font-medium text-green-300">
+                        <i class="fas fa-check-circle mr-2"></i> 분석 결과 (Potential Shorts)
+                    </h3>
+                    <button onclick="exportToPython()" class="text-sm bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded border border-gray-600">
+                        <i class="fas fa-code mr-1"></i> Python 코드 생성
+                    </button>
+                </div>
+
+                <div id="clips-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Cards will be injected here -->
+                </div>
+            </div>
+
+            <!-- Code Export Modal (Hidden) -->
+            <div id="code-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+                <div class="bg-gray-800 rounded-xl p-6 max-w-2xl w-full border border-gray-600">
+                    <div class="flex justify-between mb-4">
+                        <h3 class="text-lg font-bold">Python 실행 코드</h3>
+                        <button onclick="document.getElementById('code-modal').classList.add('hidden')" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button>
+                    </div>
+                    <pre id="python-code-output" class="bg-gray-900 p-4 rounded text-sm text-green-400 overflow-x-auto font-mono"></pre>
+                    <div class="mt-4 text-right">
+                        <button onclick="copyToClipboard()" class="bg-blue-600 px-4 py-2 rounded hover:bg-blue-500 text-white">
+                            <i class="fas fa-copy mr-2"></i> 복사하기
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Settings Section -->
+        <div id="settings-section" class="hidden p-8 max-w-3xl mx-auto">
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <h3 class="text-lg font-medium mb-4">환경 설정</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Google Gemini API Key</label>
+                        <div class="flex">
+                            <input type="password" id="api-key-input" class="flex-1 bg-gray-700 border border-gray-600 rounded-l px-4 py-2 outline-none" placeholder="AI Studio API Key">
+                            <button onclick="saveApiKey()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-r">저장</button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">API 키는 브라우저의 로컬 스토리지에만 저장됩니다.</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1">Firebase Config (JSON)</label>
+                        <textarea class="w-full h-24 bg-gray-700 border border-gray-600 rounded px-4 py-2 text-xs font-mono" placeholder='{"projectId": "...", ...}'></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script type="module">
+        import { GoogleGenerativeAI } from "@google/generative-ai";
+
+        // State
+        let apiKey = localStorage.getItem('gemini_api_key') || '';
+        let analyzedData = null;
+
+        // Init
+        window.addEventListener('load', () => {
+            if(apiKey) {
+                document.getElementById('api-status').innerText = 'API Key Ready';
+                document.getElementById('api-status').classList.replace('bg-red-900', 'bg-green-900');
+                document.getElementById('api-status').classList.replace('text-red-200', 'text-green-200');
+                document.getElementById('api-key-input').value = apiKey;
+            }
+        });
+
+        // Navigation
+        window.showSection = (sectionId) => {
+            document.getElementById('dashboard-section').classList.add('hidden');
+            document.getElementById('settings-section').classList.add('hidden');
+
+            document.getElementById(`${sectionId}-section`).classList.remove('hidden');
+
+            // Visual Update
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('bg-gray-700', 'text-white');
+                btn.classList.add('text-gray-300');
+            });
+            event.currentTarget.classList.add('bg-gray-700', 'text-white');
+            event.currentTarget.classList.remove('text-gray-300');
+
+            const titles = {'dashboard': '대시보드', 'settings': '설정'};
+            document.getElementById('page-title').innerText = titles[sectionId];
+        };
+
+        // Settings Logic
+        window.saveApiKey = () => {
+            const key = document.getElementById('api-key-input').value;
+            if(key) {
+                localStorage.setItem('gemini_api_key', key);
+                apiKey = key;
+                alert('API 키가 저장되었습니다.');
+                location.reload();
+            }
+        };
+
+        // Analysis Logic
+        window.analyzeVideo = async () => {
+            if(!apiKey) {
+                alert('설정 메뉴에서 API 키를 먼저 등록해주세요.');
+                return;
+            }
+
+            const transcript = document.getElementById('transcript-input').value;
+            if(!transcript) {
+                alert('스크립트를 입력해주세요.');
+                return;
+            }
+
+            const btn = document.querySelector('button[onclick="analyzeVideo()"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> 분석 중...';
+            btn.disabled = true;
+
+            try {
+                const genAI = new GoogleGenerativeAI(apiKey);
+                const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-09-2025" });
+
+                const prompt = `
+                당신은 유튜브 쇼츠 전문 PD입니다. 다음 스크립트를 분석하여 바이럴 가능성이 가장 높은 3~5개의 쇼츠 구간을 추출해주세요.
+
+                입력 스크립트:
+                "${transcript}"
+
+                다음 JSON 형식으로 정확하게 출력해주세요 (MarkDown 없이 순수 JSON만):
+                {
+                    "clips": [
+                        {
+                            "id": 1,
+                            "start_timestamp": 0.0,
+                            "end_timestamp": 10.0,
+                            "viral_score": 95,
+                            "hook_text": "강력한 후킹 문구",
+                            "full_transcript": "해당 구간의 전체 자막 내용",
+                            "reason": "선정 이유",
+                            "active_speaker_box": [0, 400, 1000, 600]
+                        }
+                    ]
+                }
+                * active_speaker_box는 [ymin, xmin, ymax, xmax] (0-1000 scale)이며, 영상 정보가 없으므로 [0, 250, 1000, 750] (중앙)으로 고정하세요.
+                * viral_score는 0-100 사이 정수입니다.
+                `;
+
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                let text = response.text();
+
+                // Clean MD if present
+                text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+
+                analyzedData = JSON.parse(text);
+                renderClips(analyzedData.clips);
+
+            } catch (error) {
+                console.error(error);
+                alert('분석 중 오류가 발생했습니다: ' + error.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        };
+
+        function renderClips(clips) {
+            const container = document.getElementById('clips-container');
+            container.innerHTML = '';
+            document.getElementById('results-area').classList.remove('hidden');
+
+            clips.forEach(clip => {
+                const card = document.createElement('div');
+                card.className = 'clip-card bg-gray-750 bg-gray-800 border border-gray-600 rounded-lg p-5 flex flex-col relative';
+
+                // Viral Score Badge
+                let scoreColor = 'bg-gray-600';
+                if(clip.viral_score >= 90) scoreColor = 'bg-red-600';
+                else if(clip.viral_score >= 80) scoreColor = 'bg-orange-500';
+                else scoreColor = 'bg-green-500';
+
+                card.innerHTML = `
+                    <div class="absolute top-4 right-4 ${scoreColor} text-white text-xs font-bold px-2 py-1 rounded-full">
+                        Viral Score: ${clip.viral_score}
+                    </div>
+                    <div class="text-xs text-blue-400 font-mono mb-2">
+                        ${clip.start_timestamp}s - ${clip.end_timestamp}s (${(clip.end_timestamp - clip.start_timestamp).toFixed(1)}s)
+                    </div>
+                    <h4 class="text-lg font-bold text-white mb-2 line-clamp-2">"${clip.hook_text}"</h4>
+                    <p class="text-sm text-gray-400 mb-4 flex-1 line-clamp-3">
+                        ${clip.full_transcript}
+                    </p>
+                    <div class="mt-auto pt-4 border-t border-gray-700">
+                        <p class="text-xs text-gray-500 mb-2">💡 ${clip.reason}</p>
+                        <button class="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 py-2 rounded text-sm transition">
+                            <i class="fas fa-edit mr-2"></i> 수정 / 승인
+                        </button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        window.exportToPython = () => {
+            if(!analyzedData) return;
+
+            const videoPath = document.getElementById('video-path').value || "video.mp4";
+            const videoTitle = document.getElementById('video-title').value || "Untitled";
+
+            analyzedData.video_title = videoTitle;
+
+            const jsonString = JSON.stringify(analyzedData, null, 4);
+            const pythonCode = `
+from render import create_shorts_with_subtitles
+
+# AI Analysis Data
+analysis_json = '''${jsonString}'''
+
+# Run Pipeline
+create_shorts_with_subtitles(
+    input_video_path="${videoPath}",
+    analysis_json=analysis_json,
+    app_id="my-shorts-app"
+)
+            `.trim();
+
+            document.getElementById('python-code-output').innerText = pythonCode;
+            document.getElementById('code-modal').classList.remove('hidden');
+        };
+
+        window.copyToClipboard = () => {
+            const code = document.getElementById('python-code-output').innerText;
+            navigator.clipboard.writeText(code).then(() => {
+                alert('코드가 클립보드에 복사되었습니다!');
+            });
+        };
+    </script>
+</body>
+</html>
